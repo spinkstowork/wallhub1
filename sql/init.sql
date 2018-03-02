@@ -1,4 +1,5 @@
 -- SDP DDL Init script for DB, users, tables, etc.
+-- This project targets the mysql database
 
 DROP DATABASE IF EXISTS wallhub1;
 CREATE DATABASE wallhub1 CHARACTER SET utf8 COLLATE utf8_general_ci;
