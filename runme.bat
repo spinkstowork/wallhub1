@@ -11,4 +11,4 @@
 @REM Also needed is the -Dexec.cleanupDaemonThreads=false
 @REM Ref: https://stackoverflow.com/questions/13471519/running-daemon-with-exec-maven-plugin-avoiding-illegalthreadstateexception
 
-call mvn exec:java -Dexec.mainClass=com.ef.Parser -Dexec.args="--startDate=2017-01-01.13:00:00 --duration=daily --threshold=100" -Dexec.cleanupDaemonThreads=false
+call mvn exec:java -Dexec.mainClass=com.ef.Parser -Dexec.args="--accesslog=midsize.log --startDate=2017-01-01.13:00:00 --duration=daily --threshold=100" -Dexec.cleanupDaemonThreads=false
