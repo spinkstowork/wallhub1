@@ -59,7 +59,7 @@ public class Parser { // the name of this class was specified in the requirement
 
         if( loadLogDataFlag ) { // load the DB
             BatchInsertAdapter fastVisitor = new BatchInsertAdapter( httpLogDAO );
-            fastVisitor.setMaxBufferSize( 2000 );
+            fastVisitor.setMaxBufferSize( 10000 );
 
             HttpLogParser parser = ctx.getBean( "accessLogParser", HttpLogParser.class );
 
