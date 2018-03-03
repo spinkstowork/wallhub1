@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,13 +19,14 @@ import java.util.Map;
  * Written By: Scott D. Pinkston Mar, 2018
  *
  * Main application module for WalletHub code challenge.
- * See Java_MySQL_Test_Instructions.txt for more details.
+ * See Java_MySQL_Test_Instructions.txt for requirements.
  *
  * Command line parameters:
  *
- * "startDate" is of "yyyy-MM-dd.HH:mm:ss" format
- * "duration" can take only "hourly", "daily" as inputs
- * "threshold" can be an integer
+ * REQUIRED "startDate" is of "yyyy-MM-dd.HH:mm:ss" format
+ * REQUIRED "duration" can take only "hourly", "daily" as inputs
+ * REQUIRED "threshold" can be an integer
+ * OPTIONAL "accesslog" is a path/file name
  *
  */
 public class Parser { // the name of this class was specified in the requirements from WalletHub
@@ -41,16 +44,17 @@ public class Parser { // the name of this class was specified in the requirement
 //        };
 
         CommandLineArgs clArgs = new CommandLineArgs();
-        clArgs.interpret( args );
-
-        HttpLogDAO httpLogDAO = ctx.getBean( "httpLogDAO", HttpLogDAO.class );
-        int dbRowCount = httpLogDAO.queryRowCount();
+        boolean argsValidatedFlag = clArgs.interpret( args );
 
         boolean loadLogDataFlag = false;
 
-        if( clArgs.getAccessLogPathname() != null ) { // log file specified on cmd line, force load
+        if( clArgs.getAccessLogPathname() != null ) { //
+            log.info( "Access log file specified on command line, forcing load." );
             loadLogDataFlag = true;
         }
+
+        HttpLogDAO httpLogDAO = ctx.getBean( "httpLogDAO", HttpLogDAO.class );
+        int dbRowCount = httpLogDAO.queryRowCount();
 
         if( dbRowCount == 0 ) { // no log data in DB
             log.info( "No access log data exists in DB. Forcing load.");
@@ -58,23 +62,56 @@ public class Parser { // the name of this class was specified in the requirement
         }
 
         if( loadLogDataFlag ) { // load the DB
-            BatchInsertAdapter fastVisitor = new BatchInsertAdapter( httpLogDAO );
-            fastVisitor.setMaxBufferSize( 10000 );
-
-            HttpLogParser parser = ctx.getBean( "accessLogParser", HttpLogParser.class );
-
-            // if log path is specified on the command line, then override whats in the properties file
-            if( clArgs.getAccessLogPathname() != null ) {
-                log.info( "Overriding access log property: {}", parser.getFilename() );
-                parser.setFilename( clArgs.getAccessLogPathname() );
-            }
-            parser.load( fastVisitor );
-            fastVisitor.flush();
-            dbRowCount = httpLogDAO.queryRowCount(); // resample
+            dbRowCount = loadData( ctx, clArgs, httpLogDAO );
         }
 
-        log.info( "DB is loaded and contains {} rows.", dbRowCount );
+        log.info( "HTTPLOG table is loaded and contains {} rows.", dbRowCount );
 
+        if( argsValidatedFlag ) {
+            runQuery( ctx, clArgs, httpLogDAO );
+        }
+        else {
+            log.warn( "Skipping query of HTTPLOG data. Invalid command line arguments." );
+        }
+
+        log.info( "Task completed. Exiting..." );
+    }
+
+    /**
+     * Load data from text file. Data output to DB is additive. Use init.sql script to initialize/clear.
+     * @param ctx
+     * @param clArgs
+     * @param httpLogDAO
+     * @return
+     * @throws IOException
+     * @throws SQLException
+     */
+    private static int loadData( ApplicationContext ctx, CommandLineArgs clArgs, HttpLogDAO httpLogDAO ) throws IOException, SQLException {
+        int dbRowCount;BatchInsertAdapter fastVisitor = new BatchInsertAdapter( httpLogDAO );
+        fastVisitor.setMaxBufferSize( 10000 );
+
+        HttpLogParser parser = ctx.getBean( "accessLogParser", HttpLogParser.class );
+
+        // if log path is specified on the command line, then override whats in the properties file
+        if( clArgs.getAccessLogPathname() != null ) {
+            log.info( "Overriding access log property: {}", parser.getFilename() );
+            parser.setFilename( clArgs.getAccessLogPathname() );
+        }
+        parser.load( fastVisitor );
+        fastVisitor.flush();
+        dbRowCount = httpLogDAO.queryRowCount(); // resample
+        return dbRowCount;
+    }
+
+    /**
+     * Much of the thrust of this app is evaluating command line parms and running a query for the results.
+     * However, this method can not be called without all args present and verified (see above).
+     * @param ctx
+     * @param clArgs
+     * @param httpLogDAO
+     * @throws SQLException
+     */
+    private static void runQuery( ApplicationContext ctx, CommandLineArgs clArgs, HttpLogDAO httpLogDAO ) throws SQLException {
         Map<String, Integer> ipMap = httpLogDAO.queryCntIpsForDateRangeHaving( clArgs.getStartPoint(),
             clArgs.getEndPoint(), clArgs.getThreshold() );
 
@@ -95,10 +132,14 @@ public class Parser { // the name of this class was specified in the requirement
             log.info( "Reason: {}", reason );
             bizIntelDAO.batchInsert( bizIntelList );
         }
-
-        log.info( "Task completed. Exiting..." );
     }
 
+    /**
+     * Small helper method.
+     * @param ipMap
+     * @param reason
+     * @return
+     */
     private static List<BizIntel> createBizIntelFromResults( Map<String, Integer> ipMap, String reason ) {
         List<BizIntel> outputList = new ArrayList<>( ipMap.size() );
         ipMap.entrySet().stream().forEach( entry -> { outputList.add( new BizIntel( entry.getKey(), entry.getValue(), reason ) ); });
